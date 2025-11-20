@@ -9,16 +9,36 @@ import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        VStack(spacing: 12) {
+            Text("Hello from the menu bar")
+                .font(.headline)
+            HStack {
+                Button("Start") {
+                    // action
+                    if AccessibilityHelper.ensurePermission(){
+                        StartUDP(55555, 1, true)
+                        StartMulticast(55555)
+                    }
+                }
+                Button("Stop") {
+                    StopMulticast()
+                    StopUDP()
+                }
+                
+                Button("Quit") {
+                    StopMulticast()
+                    StopUDP()
+                    NSApplication.shared.terminate(self)
+                }
+            }
         }
-        .padding()
+        .padding(16)
+        .frame(width: 300)
     }
 }
 
-#Preview {
-    ContentView()
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
 }
