@@ -21,11 +21,12 @@ extern const char *_GoStringPtr(_GoString_ s);
 /* Start of preamble from import "C" comments.  */
 
 
-#line 3 "main.go"
+#line 3 "bridge_interface.go"
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #line 1 "cgo-generated-wrapper"
 
@@ -93,7 +94,11 @@ extern _Bool StartUDP(int port, double sensitivity, _Bool debug);
 extern _Bool StopUDP(void);
 extern _Bool StartMulticast(int port);
 extern _Bool StopMulticast(void);
+extern char* GetPendingConnectionID(void);
+extern char* GetConnectionEvent(void);
 extern int GetStatus(void);
+extern _Bool ApproveConnection(char* clientID);
+extern _Bool RejectConnection(char* clientID);
 
 #ifdef __cplusplus
 }
