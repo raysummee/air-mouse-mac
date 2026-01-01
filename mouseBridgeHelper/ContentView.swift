@@ -2,54 +2,55 @@
 //  ContentView.swift
 //  mouseBridgeHelper
 //
-//  Created by Angshuman Barpujari on 11/9/25.
+//  Created by Angshuman Barpujari on 12/27/25.
 //
 
 import SwiftUI
 
 struct ContentView: View {
     @StateObject private var connectionManager = ConnectionEventManager.shared
-    
+
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Hello from the menu bar")
-                .font(.headline)
-            HStack {
-                Button("Start") {
-                    if AccessibilityHelper.ensurePermission(){
-                        print("[ContentView] Accessibility permission granted")
-                        StartUDP(55555, 1, true)
-                        StartMulticast(55555)
-                        
-                        // Register event callback
-                        print("[ContentView] Registering event callback")
-                        connectionManager.onEvent { event in
-                            print("[ContentView] Event callback received: \(event.type)")
-                            connectionManager.handleEvent(event)
-                        }
-                        
-                        print("[ContentView] Starting monitoring")
-                        connectionManager.startMonitoring()
-                    } else {
-                        print("[ContentView] Accessibility permission denied")
-                    }
+        VStack(spacing: 20){
+            Text(Constants.appName)
+                .font(.largeTitle)
+                .fontWeight(.bold)
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text(Constants.statusLabel)
+                        .font(.headline)
+                    Text(connectionManager.isConnected ? Constants.connectedStatus : Constants.notConnectedStatus)
+                        .foregroundColor(connectionManager.isConnected ? .green : .red)
                 }
-                Button("Stop") {
-                    StopMulticast()
-                    StopUDP()
-                    connectionManager.stopMonitoring()
-                }
-                
-                Button("Quit") {
-                    StopMulticast()
-                    StopUDP()
-                    connectionManager.stopMonitoring()
-                    NSApplication.shared.terminate(self)
+
+                HStack {
+                    Text(Constants.serviceLabel)
+                        .font(.headline)
+                    Text(connectionManager.isMonitoring ? Constants.serviceRunning : Constants.serviceStopped)
+                        .foregroundColor(connectionManager.isMonitoring ? .green : .orange)
                 }
             }
+            .padding(.horizontal)
+
+            VStack(spacing: 12) {
+                Button(action: {
+                    connectionManager.toggleService()
+                }) {
+                    Text(connectionManager.isMonitoring ? Constants.stopServiceButton : Constants.startServiceButton)
+                        .frame(minWidth: Constants.buttonMinWidth)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Text(Constants.windowDescription)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
         }
-        .padding(16)
-        .frame(width: 300)
+        .padding(30)
+        .frame(minWidth: Constants.windowWidth, minHeight: Constants.windowHeight)
     }
 }
 

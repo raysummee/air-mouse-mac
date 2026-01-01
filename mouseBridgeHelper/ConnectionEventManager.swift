@@ -9,6 +9,8 @@ import Foundation
 import SwiftUI
 import Combine
 
+// MARK: - Types
+
 /// Callback type for connection events
 typealias ConnectionEventCallback = (ConnectionEvent) -> Void
 
@@ -21,41 +23,42 @@ struct ConnectionEvent {
         case connectionDisconnected
         case unknown(String)
     }
-    
+
     let type: EventType
     let deviceID: String
     let details: String
 }
 
+// MARK: - ConnectionEventManager
+
 class ConnectionEventManager: NSObject, ObservableObject {
     @Published var isMonitoring = false
+    @Published var isConnected = false
     private var eventListenerThread: Thread?
     private var eventCallbacks: [ConnectionEventCallback] = []
     private let callbackQueue = DispatchQueue(label: "com.mousebridgehelper.events", attributes: .concurrent)
-    public let objectWillChange = PassthroughSubject<Void, Never>()
     
     static let shared = ConnectionEventManager()
     
     override private init() {
         super.init()
     }
-    
+
+    // MARK: - Event Registration
+
     /// Register a callback to be called when events arrive
     func onEvent(_ callback: @escaping ConnectionEventCallback) {
         callbackQueue.async(flags: .barrier) { [weak self] in
             self?.eventCallbacks.append(callback)
         }
     }
-    
+
+    // MARK: - Monitoring Control
+
     /// Start receiving connection events (blocking listener)
     func startMonitoring() {
-        guard !isMonitoring else { 
-            print("[ConnectionEventManager] Already monitoring, skipping start")
-            return 
-        }
-        
-        print("[ConnectionEventManager] Starting event monitoring...")
-        
+        guard !isMonitoring else { return }
+
         // Set isMonitoring to true BEFORE starting the thread
         isMonitoring = true
         
@@ -63,151 +66,132 @@ class ConnectionEventManager: NSObject, ObservableObject {
         eventListenerThread = Thread { [weak self] in
             self?.listenForEvents()
         }
-        eventListenerThread?.name = "ConnectionEventListener"
+        eventListenerThread?.name = Constants.connectionEventListenerThreadName
         eventListenerThread?.start()
     }
     
     /// Stop receiving connection events
     func stopMonitoring() {
-        guard isMonitoring else { 
-            print("[ConnectionEventManager] Not monitoring, skipping stop")
-            return 
-        }
-        
-        print("[ConnectionEventManager] Stopping event monitoring...")
-        
+        guard isMonitoring else { return }
+
         // Set isMonitoring to false immediately
         isMonitoring = false
-        
+        // Reset connection status when stopping
+        isConnected = false
+
         // Stop the listening thread
         eventListenerThread?.cancel()
         eventListenerThread = nil
+
+        // Clear event callbacks to prevent accumulation
+        eventCallbacks.removeAll()
     }
     
     /// Listen for events in a background thread (blocking call)
     private func listenForEvents() {
-        print("[ConnectionEventManager] listenForEvents() started")
         while !Thread.current.isCancelled && isMonitoring {
             autoreleasepool {
-                print("[ConnectionEventManager] Calling GetConnectionEvent() (blocking)...")
                 // This call blocks until an event is available
                 let eventCString = GetConnectionEvent()
-                
+
                 if let eventCString = eventCString {
                     let eventString = String(cString: eventCString)
-                    print("[ConnectionEventManager] Received event string: \(eventString)")
-                    
+
                     // Free the C string returned by the C function
                     free(eventCString)
-                    
+
                     if !eventString.isEmpty {
-                        print("[ConnectionEventManager] Event string is not empty, parsing...")
                         if let parsedEvent = self.parseEvent(eventString) {
-                            print("[ConnectionEventManager] Event parsed successfully: \(parsedEvent.type)")
                             self.callEventCallbacks(parsedEvent)
-                        } else {
-                            print("[ConnectionEventManager] Failed to parse event: \(eventString)")
                         }
-                    } else {
-                        print("[ConnectionEventManager] Event string is empty")
                     }
-                } else {
-                    print("[ConnectionEventManager] GetConnectionEvent() returned nil")
                 }
             }
         }
-        print("[ConnectionEventManager] listenForEvents() loop ended")
     }
     
     /// Parse event string and call appropriate callbacks
     private func callEventCallbacks(_ event: ConnectionEvent) {
-        print("[ConnectionEventManager] Calling event callbacks for: \(event.type)")
         callbackQueue.async { [weak self] in
-            guard let self = self else { 
-                print("[ConnectionEventManager] Self is nil in callback")
-                return 
-            }
-            print("[ConnectionEventManager] Total callbacks registered: \(self.eventCallbacks.count)")
+            guard let self = self else { return }
             self.eventCallbacks.forEach { callback in
-                print("[ConnectionEventManager] Executing callback...")
                 callback(event)
             }
         }
     }
-    
+
+    // MARK: - Event Parsing
+
     /// Parse event string into ConnectionEvent struct
     private func parseEvent(_ eventString: String) -> ConnectionEvent? {
-        print("[ConnectionEventManager] Parsing event string: \(eventString)")
+        guard !eventString.isEmpty else { return nil }
+
         let components = eventString.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
-        print("[ConnectionEventManager] Split into \(components.count) components")
-        
-        guard components.count >= 2 else { 
-            print("[ConnectionEventManager] Not enough components (got \(components.count), need at least 2)")
-            return nil 
-        }
-        
+
+        guard components.count >= 2 else { return nil }
+
         let eventTypeStr = String(components[0])
         let deviceID = String(components[1])
+
+        guard !deviceID.isEmpty else { return nil }
+
         let details = components.count > 2 ? String(components[2]) : ""
-        
-        print("[ConnectionEventManager] Event type: \(eventTypeStr), Device ID: \(deviceID), Details: \(details)")
-        
+
         let eventType: ConnectionEvent.EventType = {
             switch eventTypeStr {
-            case "new_pending_connection":
-                print("[ConnectionEventManager] Identified as newPendingConnection")
+            case Constants.EventType.newPendingConnection:
                 return .newPendingConnection
-            case "connection_approved":
-                print("[ConnectionEventManager] Identified as connectionApproved")
+            case Constants.EventType.connectionApproved:
                 return .connectionApproved
-            case "connection_rejected":
-                print("[ConnectionEventManager] Identified as connectionRejected")
+            case Constants.EventType.connectionRejected:
                 return .connectionRejected
-            case "connection_disconnected":
-                print("[ConnectionEventManager] Identified as connectionDisconnected")
+            case Constants.EventType.connectionDisconnected:
                 return .connectionDisconnected
             default:
-                print("[ConnectionEventManager] Identified as unknown: \(eventTypeStr)")
                 return .unknown(eventTypeStr)
             }
         }()
-        
+
         return ConnectionEvent(type: eventType, deviceID: deviceID, details: details)
     }
-    
+
+    // MARK: - Event Handling
+
     /// Handle a connection event
     func handleEvent(_ event: ConnectionEvent) {
-        print("[ConnectionEventManager] handleEvent called with type: \(event.type)")
         switch event.type {
         case .newPendingConnection:
-            print("[ConnectionEventManager] Showing approval dialog for: \(event.deviceID)")
             showApprovalDialog(deviceID: event.deviceID, details: event.details)
         case .connectionApproved:
             print("[ConnectionEventManager] Connection approved: \(event.deviceID)")
+            isConnected = true
         case .connectionRejected:
-            print("[ConnectionEventManager] Connection rejected: \(event.deviceID)")
+            break
         case .connectionDisconnected:
             print("[ConnectionEventManager] Connection disconnected: \(event.deviceID)")
+            isConnected = false
         case .unknown(let type):
             print("[ConnectionEventManager] Unknown event type: \(type)")
         }
     }
-    
+
+    // MARK: - UI Dialogs
+
     /// Show approval dialog for new pending connection
     private func showApprovalDialog(deviceID: String, details: String) {
-        print("[ConnectionEventManager] Creating approval dialog - Device: \(deviceID), Details: \(details)")
-        
+        guard !deviceID.isEmpty else { return }
+
         // Dispatch to main thread since NSAlert must be created on main thread
         DispatchQueue.main.async { [weak self] in
             let alert = NSAlert()
-            alert.messageText = "New Connection Request"
+            alert.messageText = Constants.connectionRequestTitle
             alert.informativeText = details
-            alert.addButton(withTitle: "Approve")
-            alert.addButton(withTitle: "Reject")
+            alert.addButton(withTitle: Constants.approveButton)
+            alert.addButton(withTitle: Constants.rejectButton)
             alert.alertStyle = .informational
-            
+
             let response = alert.runModal()
-            
+
             if response == NSApplication.ModalResponse.alertFirstButtonReturn {
                 self?.approveConnection(deviceID: deviceID)
             } else {
@@ -218,16 +202,50 @@ class ConnectionEventManager: NSObject, ObservableObject {
     
     /// Approve a connection
     func approveConnection(deviceID: String) {
+        guard !deviceID.isEmpty else { return }
         deviceID.withCString { ptr in
             ApproveConnection(UnsafeMutablePointer(mutating: ptr))
         }
     }
-    
+
     /// Reject a connection
     func rejectConnection(deviceID: String) {
+        guard !deviceID.isEmpty else { return }
         deviceID.withCString { ptr in
-             RejectConnection(UnsafeMutablePointer(mutating: ptr))
+            RejectConnection(UnsafeMutablePointer(mutating: ptr))
         }
     }
+
+    // MARK: - Connection Management
+
+    func startService() {
+        StartMulticast(Constants.multicastPort)
+        StartUDP(Constants.udpPort, Constants.udpTimeout, true)
+        startMonitoring()
+    }
+    
+    func stopService() {
+        StopMulticast()
+        StopUDP()
+        stopMonitoring()
+    }
+
+    func toggleService() {
+        if isMonitoring {
+            // Stop the service
+            stopService()
+        } else {
+            // Start the service
+            if AccessibilityHelper.ensurePermission() {
+                // Register event callback before starting service
+                onEvent { [weak self] event in
+                    self?.handleEvent(event)
+                }
+
+                startService()
+            }
+        }
+    }
+    
 }
 

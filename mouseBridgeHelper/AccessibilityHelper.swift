@@ -30,7 +30,7 @@ class AccessibilityHelper {
 
             // Show custom alert **after a short delay**, so the system dialog appears first
             if showAlert {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Constants.accessibilityAlertDelay) {
                     showAccessibilityAlert()
                 }
             }
@@ -48,14 +48,11 @@ class AccessibilityHelper {
     /// Shows a custom alert guiding the user to enable Accessibility permission
     private static func showAccessibilityAlert() {
         let alert = NSAlert()
-        alert.messageText = "Accessibility Access Needed"
-        alert.informativeText = """
-        This app requires Accessibility access to control your mouse or keyboard.
-        Please enable it in System Settings → Privacy & Security → Accessibility.
-        """
+        alert.messageText = Constants.accessibilityNeededTitle
+        alert.informativeText = Constants.accessibilityNeededMessage
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: Constants.openSettingsButton)
+        alert.addButton(withTitle: Constants.cancelButton)
 
         // Ensure alert is frontmost
         NSApp.activate(ignoringOtherApps: true)
